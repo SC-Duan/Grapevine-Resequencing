@@ -1,0 +1,11 @@
+1. prepare data
+vcftools --gzvcf grape.all.bi.snp.vcf.gz --keep grape.core_2448.txt --max-missing 0.4 --maf 0.05 --recode --stdout | gzip -c > grape.core.vcf.gz
+plink --vcf grape.core.vcf.gz --set-missing-var-ids @:# --make-bed --out grape.core
+plink --bfile grape.core --indep-pairwise 50 5 0.5 -out grape.core.pruning
+plink --bfile grape.core --extract grape.core.pruning.prune.in --make-bed --out grape.core.pruned
+
+2. run archetypal-analysis
+for ((i=2;i<13;i++))
+	do mkdir /public/archetypal-analysis/k${i}
+	archetypal-analysis -i /public/archetypal-analysis/k${i}/grape.core.pruned.bed -o /public/archetypal-analysis/k${i} -k ${i} --tolerance 0.0001 --max_iter 400;
+	done

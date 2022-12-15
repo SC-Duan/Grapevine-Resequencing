@@ -1,0 +1,18 @@
+    1. Filter snp by SNPhylo
+       ~/bin/snphylo.sh -v Grape.vcf -r -A -b 
+
+    2. Run RAxML-NG 
+       ~/bin/raxml-ng_v0.9.0_linux_x86_64_MPI/bin/raxml-ng --msa snphylo.output.phylip.txt --parse --model GTR+G
+
+       ~/bin/raxml-ng_v0.9.0_linux_x86_64_MPI/bin/raxml-ng --search --msa Grape_raxml.raxml.rba --tree pars{1} --prefix CT$i --seed $i --threads 13
+       
+       ~/bin/raxml-ng_v0.9.0_linux_x86_64_MPI/bin/raxml-ng --search --msa Grape_raxml.raxml.rba --tree rand{1}  --prefix CT$i --seed $i --threads 13
+
+       grep "Final LogLikelihood" CT*.raxml.log | sort -k 3
+
+       ## bootstrap
+         ~/bin/raxml-ng_v0.9.0_linux_x86_64_MPI/bin/raxml-ng --bootstrap --msa Grape_raxml.raxml.rba --bs-trees 100 --prefix CB$i --seed $i --threads 2 
+
+         ~/bin/raxml-ng_v0.9.0_linux_x86_64_MPI/binraxml-ng --bsconverge --bs-trees allbootstraps --prefix CS --seed 2 --threads 1
+
+         ~/bin/raxml-ng_v0.9.0_linux_x86_64_MPI/binraxml-ng --support --tree best.tre --bs-trees allbootstraps --prefix CS --threads 1

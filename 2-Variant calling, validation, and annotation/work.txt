@@ -1,0 +1,69 @@
+Variant calling, validation, and annotation
+  1. raw reads filtering
+      ~/bin/fastp -i sample_1.clean.fq.gz -o sample_1.filtered.fq.gz -I sample_2.clean.fq.gz -O sample_2.filtered.fq.gz -q 20 -u 40 -l 70
+ 
+  2. Reads mapping
+     ~/bin/bwa-mem2 index VS1.fa 
+
+    ~/bin/bwa-mem2  mem -R '@RG\tID:B44\tLB:B44\tSM:B44\tPL:ILLUMINA' -t 30 VS1.final.fa sample_1.filtered.fq.gz  sample_2.filtered.fq.gz  |samtools view -Sb - >sample.pe.bam
+
+     ~/bin/gatk SortSam --INPUT sample.pe.bam --OUTPUT sample.sort.bam --SORT_ORDER coordinate
+
+     ~/bin/gatk MarkDuplicates -I sample.sort.bam -O sample.sort.markdup.bam -M sample.sort.markdup_metrics.txt
+
+     ~/bin/samtools index sample.sort.markdup.bam
+
+   3. Sequencing statistics
+      ~/bin/bamdst -p VS1.final.fa.bed -o ~/sample sample.sort.markdup.bam
+
+   4. Variant calling 
+       time java -Xmx12g -Djava.io.tmpdir=./java_tmp -jar ~/bin/gatk3.8.0/GenomeAnalysisTK.jar -T HaplotypeCaller --num_cpu_threads_per_data_thread 40  -R VS1.final.fa  -I sample.sort.markdup.bam  -ERC GVCF  -variant_index_type LINEAR -variant_index_parameter 128000 -A StrandOddsRatio -A Coverage -A QualByDepth -A FisherStrand -A MappingQualityRankSumTest -A ReadPosRankSumTest -A RMSMappingQuality -o sample.g.vcf.gz
+
+       #joint-genotyping analysis of the gVCFs (-L 1..19)
+       time java -Xmx12g -Djava.io.tmpdir=./java_tmp -jar ~/bin/gatk3.8.0/GenomeAnalysisTK.jar -T CombineGVCFs -R  VS1.final.fa -V sample1.g.vcf.gz -V sample2.g.vcf.gz -L 1 -o chr.1.g.vcf.gz
+
+       time java -Xmx12g -Djava.io.tmpdir=./java_tmp -jar ~/bin/gatk3.8.0/GenomeAnalysisTK.jar  -T GenotypeGVCFs   -R VS1.final.fa -V  chr.1.g.vcf.gz -L 1 -o chr.1.raw.vcf.gz
+
+       ~/bin/gatk SelectVariants  -select-type SNP  -V Grape.1.raw.vcf.gz -O Grape.1.snp.vcf.gz
+
+       ~/bin/gatk SelectVariants  -select-type INDEL -V Grape.1.raw.vcf.gz -O Grape.1.indel.vcf.gz
+
+   5. SNP and INDEL filtering
+      ~/bin/gatk -V Grape.1.snp.vcf.gz -filter "QD < 2.0" --filter-name "QD2"  -filter "QUAL < 30.0" --filter-name "QUAL30" -filter "SOR > 3.0" --filter-name "SOR3" -filter "FS > 60.0" --filter-name "FS60" -filter "MQ <40.0" --filter-name "MQ40" -filter "MQRankSum < -10.0" --filter-name "MQRankSum-10" -filter "ReadPosRankSum < -8.0" --filter-name ReadPosRankSum-8  -O Grape.1.fliter.snp.vcf.gz
+
+      ~/bin/vcftools --gzvcf Grape.1.fliter.snp.vcf.gz --remove-filtered-all --recode --stdout | gzip -c Grape.1.pass.snp.vcf.gz
+
+      ~/bin/vcftools --gzvcf Grape.1.pass.snp.vcf.gz  --min-alleles 2 --max-alleles 2 --recode --stdout | gzip -c Grape.1.bi.snp.vcf.gz
+
+      ~/bin/vcftools --gzvcf Grape.1.bi.snp.vcf.gz --max-missing 0.4 --maf  0.005 --recode --stdout | gzip -c >Grape.1.bi.maf0.005mis0.4.snp.vcf.gz
+
+      ~/bin/vcftools --gzvcf Grape.1.bi.snp.vcf.gz --TsTv-summary --out Grape.1.bisnp
+
+      ~/bin/gatk -V Grape.1.max40.indel.vcf.gz -filter "QD < 2.0" --filter-name "QD2"  -filter "QUAL < 30.0" --filter-name "QUAL30" -filter "SOR > 5.0" --filter-name "SOR5" -filter "FS > 100.0" --filter-name "FS100"  -filter "InbreedingCoeff <-0.8" --filter-name "InbreedingCoeff-0.8"  -O Grape.1.filter.indel.vcf.gz
+
+      ~/bin/vcftools --gzvcf --remove-filtered-all --recode --stdout | gzip -c >Grape.1.pass.indel.vcf.gz
+
+
+    6. SNP Validation
+       ## CHIP and previous 472 SNP validation
+      perl get_snpfa.pl PN40024.fa chip.info 60
+      ~/bin/makeblastdb -in VS1.final.fa -dbtype nucl -out VS1.final.fa
+
+      ~/bin/blastn -task megablast -use_index true -db  VS1.final.fa -query chip.snp.fa -outfmt 6 -out chip.snp.megablast.out
+
+      ## 59 Chasselas clones validation
+      ~/bin/gatk Mutect2 -R VS1.final.fa -I sample.sort.markdup.bam --independent-mates true -tumor sample -I 229.sort.markdup.bam -normal 229  -O sample.vcf.gz
+
+      ~/bin/gatk FilterMutectCalls -R VS1.final.fa -V sample.vcf.gz -O sample.filter.vcf.gz
+
+      ~/bin/gatk SelectVariants -select-type SNP -V sample.filter.vcf.gz -O sample.filter.snp.vcf.gz
+      ~/bin/vcftools --gzvcf sample.filter.snp.vcf.gz --remove-filtered-all --recode --stdout | gzip -c > sample.pass.snp.vcf.gz
+
+    7. SNP annotation
+       ## ANNOVAR annotation
+         perl ~/bin/annovar/convert2annovar.pl -format vcf4 -allsample --withfreq Grape.filter.snp.vcf.gz >Grape.filter.snp.annovar
+
+         perl ~/bin/annovar/annotate_variation.pl --buildver VS1 --geneanno Grape.filter.snp.annovar -outfile Grape.snp annovar/vvdb/
+
+         ## Function annotation by Provean
+          ~/bin/provean-1.1.5/provean.sh -q  variation.fasta -v variation.var  --tmp_dir tmp_dir -V --num_threads 472

@@ -1,0 +1,25 @@
+1. filter SNPs
+vcftools --gzvcf grape.snp.vcf.gz --keep group.txt --max-missing 1 --mac 1 --recode --stdout | gzip -c > grape.vcf.gz
+
+2. run Dtrios
+~/Dsuite/Build/Dsuite Dtrios -n grape grape.vcf.gz SETS.txt
+
+#head -2 SETS.txt
+ZZ01	Outgroup
+TA-6228	WEUA
+
+3. df and fdM statistics
+~/Dsuite/Build/Dsuite Dinvestigate -w 50,5 grape.vcf.gz SETS.txt need_group.txt
+
+4. f3 statistics
+#convert vcf to eigenstrat format for ADMIXTOOLS
+sh convertVCFtoEigenstrat.sh grape.vcf.gz
+
+R:
+library(admixr)
+library(readr)
+data_prefix <- "grape"
+snps <- eigenstrat(data_prefix)
+pops <- c("group1","group2","group3".......)
+result <- f3(A = pops, B = pops, C = "rotundifolia", data = snps)
+write.table(result,file="grape.f3statistics.txt",row.names=FALSE,sep="\t",quote=FALSE)

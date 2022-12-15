@@ -1,0 +1,33 @@
+1. calculated fst
+vcftools --gzvcf grape.all.bi.snp.vcf.gz --weir-fst-pop pop1.txt --weir-fst-pop pop2.txt --fst-window-size 100000 --out grape.pop1_po2
+
+2. calculated haversine distances
+library(geosphere)
+distHaversine(c(longitude1,latitude1),c(longitude2,latitude2))
+
+3. obtain linear regressions
+library(ggplot2)
+library(ggpmisc)
+library(dplyr) 
+a=read.table("distance_fst.txt",header=TRUE,sep='\t')
+p1<-ggplot(a,aes(x= Distance,y= Fst))+geom_point(shape=21,size=2,color="gray")+
+theme_classic()+xlim(0,20000)+ylim(0,0.4)+
+stat_smooth(method="lm",formula = y ~ x)
+
+model.lm <- lm(Fst ~ Distance, data = a)
+summary(model.lm)
+group_l <- list(a = format(coef(model.lm)[1], digits = 4), b = format(abs(coef(model.lm)[2]), digits = 4), r2 = format(summary(model.lm)$r.squared, digits = 4), p = format(summary(model.lm)$coefficients[2,4], digits = 4))
+
+#distance_fst.txt
+#Country	Distance	Fst
+#Afghanistan.Albania	4218.852	0.0904883
+#Afghanistan.Algeria	6230.262	0.0478774
+
+
+4. mantel test
+library(ade4)
+fst <- read.table("fst.matrix.txt",header=TRUE)
+distance <- read.table("distance.matrix.txt",header=TRUE)
+fst_dist=as.dist(fst)
+distance_dist=as.dist(distance)
+mantel.rtest(distance_dist, fst_dist, nrepet = 9999)

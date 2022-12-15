@@ -1,0 +1,230 @@
+1.NextDenovo
+1.1 seq_stat calculated length cutoff of reads
+~/NextDenovo/bin/seq_stat -g 500Mb input.fofn
+#45x reads were used to correct reads
+1.2 run	nextDenovo（v2.1-beta.0）
+~/NextDenovo/nextDenovo ./run.cfg -l log.txt
+
+# config content
+job_type = local
+job_prefix = nextDenovo
+task = all
+rewrite = yes
+deltmp = yes
+rerun = 3
+parallel_jobs = 20
+input_type = raw
+input_fofn = /data/nextdenovo/input.fofn
+workdir = /data/nextdenovo
+#cluster_options = -q gxyy -l nodes1:ppn=10 -j oe
+#nodelist = avanode.list.fofn
+
+[correct_option]
+read_cuoff = 1k
+seed_cutoff = 19703
+seed_cutfiles = 40
+blocksize = 10g
+
+pa_correction = 40
+minimap2_options_raw = -x ava-pb -t 16
+sort_options = -m 50g -t 16 -k 50
+correction_options = -p 32
+
+[assemble_option]
+random_round = 100
+minimap2_options_cns = -x ava-pb -t 32 -k17 -w17
+nextgraph_options = -a 1
+
+2. purge haplotigs
+
+minimap2 -t 10 -ax map-pb VS1.fasta total.fasta.gz  --secondary=no  | samtools sort -m 1G -o aligned.bam -T tmp.ali
+
+purge_haplotigs  hist  -b aligned.bam  -g VS1.fasta  -t 20
+purge_haplotigs cov  -i aligned.bam.gencov -o coverage_stats.csv  -l 10  -m 68  -h 140
+purge_haplotigs purge  -g VS1.fasta -c coverage_stats.csv   -t 4  -a 60
+
+#get curated.fasta file
+
+3.	pilon polish 
+bwa  mem -t 20 ./curated.fasta  SV-1-1_TKD181000271_1.clean.fq.gz.clean.dup.clean SV-1-1_TKD181000271_2.clean.fq.gz.clean.dup.clean |samtools sort -@ 20 -O BAM -o VS1-1.pe.sort.bam
+samtools index VS1-1.pe.sort.bam
+
+java -Xmx300g -jar pilon-1.21.jar --genome ./curated.fasta --frags ./round1_bam/VS1-1.pe.sort.bam --frags ./round1_bam/VS1-2.pe.sort.bam --frags ./round1_bam/VS1-3.pe.sort.bam --frags ./round1_bam/VS1-4.pe.sort.bam  --fix snps,indels --output VS1.round1.pilon --changes --threads 50
+
+4.	ccs extend
+4.1	CCS bam to fasta
+~/bin/bam2fastx -AQa -o ABFC20191093-01.ccs.fasta.gz ABFC20191093-01.ccs.bam
+4.2	Canu assembly ccs reads
+~/bin/canu -p vs1 -d vs1  gridEngine=PBS genomeSize=500m \
+  batOptions="-dg 3 -db 3 -dr 1 -ca 500 -cp 50 -M 250" \
+  correctedErrorRate=0.050 \
+  gridOptions="-q gxyy " \
+  -pacbio-hifi ABFC20191093-01.ccs.fasta.gz
+4.3	Mummer align result of pilon polished and  CCS assembly
+4.4 Manual correction and links.
+
+5. Nextpolish
+nextPolish run.cfg
+
+#run.cfg
+[General]
+job_type = local
+job_prefix = nextPolish
+task = best
+rewrite = yes
+rerun = 3
+parallel_jobs = 10
+multithread_jobs = 8
+genome = ./genome.fasta
+genome_size = auto
+workdir = ./01_rundir
+polish_options = -p {multithread_jobs}
+
+[lgs_option]
+//lgs_fofn = ./lgs.fofn
+lgs_options = -min_read_len 1k -max_depth 60
+lgs_minimap2_options = -x map-pb
+
+#lgs.fofn
+ABFC20191093-01.ccs.fasta.gz
+
+6. 3ddna assembly
+6.1 Juicer alignment
+~/juicer/scripts/juicer.sh \
+ -z /data/references/VS1.pilon.merge.polish.fasta \
+ -d /data/NextDenovo2/VS1/hic_nextdenovo \
+ -s DpnII -t 50 \
+ -p /data/restriction_sites/VS1.pilon.merge.polish.chrom.sizes \
+ -y /data/restriction_sites/VS1.pilon.merge.polish_DpnII.txt \
+ -D ~/juicer
+ 
+6.2 3ddna assembly
+~/3d-dna/run-asm-pipeline.sh VS1.pilon.merge.polish.fasta merged_nodups.txt
+
+6.3 3ddna-review
+~/3d-dna/run-asm-pipeline-post-review.sh  -s finalize --sort-output --build-gapped-map -r VS1.curated.FINAL.review.assembly VS1.curated.fa merged_nodups.txt
+
+7. Mummber align the assembly to Pinot Noir genome
+7.1 nucmer -c 100 -p out/1_1 VS1.FINAL.fa.cut//VS1.FINAL.fa.1 Vitis_vinifera.IGGP_12x.31.dna.genome.fa.cut//Vitis_vinifera.IGGP_12x.31.dna.genome.fa.1
+7.2 python deal_delta.py out/ref_query.delta out/ref_query.deal.delta
+7.3 delta-filter -i 89 -l 1000 -1 ref_query.deal.delta >ref_query.deal.delta.identy_0.9.len1k.filter
+7.4 show-coords -c ref_query.deal.delta.identy_0.9.len1k.filter >ref_query.deal.delta.identy_0.9.len1k.filter.coords
+7.5 ~/dotPlotly/mummerCoordsDotPlotly.R -i ref_query.deal.delta.identy_0.9.len1k.filter.coords -o ref_query.deal.delta.identy_0.9.len1k.filter.coords -s -t -m 5000 -q 5000 -k 25 -l
+
+8. Repeat annotation
+8.1 Ltr_finder: 
+LTR_FINDER_parallel -seq VS1.FINAL.fa -threads 40 -harvest_out -size 1000000 -time 300 -finder ltr_finder
+8.2 Ltrharvest: 
+gt suffixerator -db VS1.FINAL.fa -indexname VS1.FINAL.fa -tis -suf -lcp -des -ssp -sds -dna
+gt ltrharvest -index VS1.FINAL.fa -minlenltr 100 -maxlenltr 7000 -mintsd 4 -maxtsd 6 -motif TGCA -motifmis 1 -similar 85 -vic 10 -seed 20 -seqids yes > VS1.genome.split.harvest.scn
+8.3 LTR_retriever: 
+LTR_retriever -genome VS1.FINAL.fa -inharvest VS1.FINAL.fa.rawLTR.scn -threads 40
+8.4 RepeatModeler
+~/RepeatModeler-2.0/BuildDatabase -name mydb VS1.FINAL.fa >log
+~/RepeatModeler-2.0/RepeatModeler -pa 15 -database mydb > run.out
+8.5 Repeatmasker
+perl RepeatMasker -nolow -no_is -norna -pa 1 -species Viridiplantae VS1.FINAL.fa > VS1.FINAL.fa.log 2> VS1.FINAL.fa.log2
+8.6 Proteinmasker
+perl RepeatProteinMask -engine ncbi -noLowSimple -pvalue 0.0001 VS1.FINAL.fa.masked
+8.7repeatmasker_de
+perl RepeatMasker -nolow -no_is -norna -pa 1 -lib denovo.library.fa VS1.FINAL.fa. masked.masked >VS1.FINAL.fa. masked.masked.log 2>VS1.FINAL.fa.masked.masked.log2
+8.8 Trf
+trf VS1.FINAL.fa 2 7 7 80 10 50 2000 -d -h
+
+9. Gene annotation
+9.1 Homolog: Arabidopsis thaliana (Ensembl release 43), V. riparia, V. vinifera cv. Chardonnay, 12x.v2 (Ensembl, NCBI, and vitviv2)
+perl ~/Annotation_pipeline/01.gene_finding/protein-map-genome/bin/protein_map_genome.pl --cpu 100 --align_rate 0.25 --step 1234 --tophit 10  --lines 1000 --verbose --extend_len 2000 --queue clu /data/Arabidopsis_thaliana/Arabidopsis_thaliana.TAIR10.43.gff.pep ./VS1.FINAL.fa
+
+9.2 Denovo
+9.2.1 Augustus (2.5.5) db: BUSCO results
+~/augustus.2.5.5/bin/augustus --species=BUSCO --AUGUSTUS_CONFIG_PATH=~/augustus_busco/ --uniqueGeneId=true --noInFrameStop=true --gff3=on --strand=both VS1.FINAL.fa > VS1.FINAL.fa.augustus
+9.2.2 glimmerHMM (3.0.2)，db: Arabidopsis thaliana
+~/GlimmerHMM/bin/glimmerhmm  VS1.FINAL.fa  -d  ~/GlimmerHMM/trained_dir/arabidopsis  -f  -g  >  VS1.FINAL.fa.gff
+9.2.3 Genescan (2015-10-31)
+perl  /nfs/nfs1/soft/Annotation_pipeline/01.gene_finding/denovo-predict/bin/split_seq.pl  -len  1000000  /nfs/nfs3/dongx/wild_vitis/VS1/VS1.FINAL.fa  >  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./VS1.FINAL.fa.cut1Mb;  perl  /nfs/nfs1/soft/Annotation_pipeline/01.gene_finding/denovo-predict/bin/predict_run.pl  /nfs/nfs1/soft/soft_annotation/genscan/genscan  /nfs/nfs1/soft/soft_annotation/genscan/Arabidopsis.smat  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./VS1.FINAL.fa.cut1Mb  >  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./VS1.FINAL.fa.genscan;  perl  /nfs/nfs1/soft/Annotation_pipeline/01.gene_finding/denovo-predict/bin/predict_convert_new.pl  --predict  genscan  --backcoor  --final  G  -outdir  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./VS1.FINAL.fa.genscan  /nfs/nfs3/dongx/wild_vitis/VS1/VS1.FINAL.fa;  perl  /nfs/nfs1/soft/Annotation_pipeline/01.gene_finding/denovo-predict/bin/Check_GFF.pl  -perfect  -check_cds  -mini_cds  150  -cds_ns  10  -outdir  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/genescan/./VS1.FINAL.fa.genscan.gff  /nfs/nfs3/dongx/wild_vitis/VS1/VS1.FINAL.fa
+9.2.4 SNAP (Semi-HMM-based Nucleic Acid Parser, version 2006-07-28)
+/nfs/nfs1/soft/soft_annotation/snap/snap  -gff  /nfs/nfs1/soft/soft_annotation/snap/HMM/A.thaliana.hmm  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/snap/./VS1.FINAL.fa.cut/VS1.FINAL.fa.1  >  /nfs/nfs3/dongx/wild_vitis/VS1/2.gene/denovo/snap/./VS1.FINAL.fa.cut/VS1.FINAL.fa.1.snap
+
+9.3 Transcriptome
+9.3.1 Build index
+hisat2-build -p 20 VS1.FINAL.fa VS1.FINAL.fa
+
+9.3.2 Hisat alignment
+hisat2  -p 10 -x VS1.FINAL.fa -U ${i}.fq.gz.qtrim  -S ${i}.sam
+samtools  view -bS ${i}.sam > ${i}.bam
+samtools  sort -o ${i}.sorted.bam ${i}.bam
+stringtie   ${i}.sorted.bam -o ${i}.gtf -p 10
+
+9.3.3 Stringtie merge gtf
+stringtie --merge -o merged.gtf gtflist
+
+9.4 EVM 
+perl ~/EVM_r2012-06-25/EvmUtils/partition_EVM_inputs.pl --genome VS1.FINAL.fa --gene_predictions denovo.gff3 \
+ --protein_alignments homolog.gff3 --transcript_alignments merged.gff3 \
+ --segmentSize 5000000 --overlapSize 10000 --partition_listing partitions_list.out
+perl ~/EVM_r2012-06-25/EvmUtils/write_EVM_commands.pl \
+ --genome VS1.FINAL.fa --weights weight.txt \
+ --gene_predictions denovo.gff3 --protein_alignments homolog.gff3 --transcript_alignments merged.gff3 \
+ --output_file_name evm.out \
+ --partitions partition/partitions_list.out > commands.list
+sh commands.list
+#weight
+PROTEIN A. thaliana 3, V. riparia 5, Chardonnay 6, 12x (3 versions) 8
+AB initio AUGUSTUS 5, Glimmer, GeneScan, SNAP 1
+Transcript 8
+
+perl ~/EVM_r2012-06-25/EvmUtils/recombine_EVM_partial_outputs.pl \
+ --partitions partition/partitions_list.out --output_file_name evm.out
+
+perl ~/EVM_r2012-06-25/EvmUtils/convert_EVM_outputs_to_GFF3.pl \
+ --partitions partition/partitions_list.out --output_file_name evm.out --genome VS1.FINAL.fa
+ 
+for i in partition/*; do for j in $i/*out.gff3;do cat $j; done;done >EVM.out.gff3
+ 
+9.5 PASA update
+Transcriptome for PASA
+Trinity --seqType fq --left SRRxx.1.fastq.gz --right SRRxx.2.fastq.gz --CPU 24 --max_memory 20G
+
+perl ~/pasa/PASApipeline/misc_utilities/accession_extractor.pl <no_re_full-length.fasta>tdn.accs
+perl ~/pasa/PASApipeline/bin/seqclean all_transcripts.fasta -c 16 -v ~/pasa/UniVec/UniVec.fasta
+perl ~/pasa/PASApipeline/Launch_PASA_pipeline.pl \
+ --TDN  tdn.accs \
+ -c alignAssembly.config -C -R -g VS1.FINAL.fa \
+ -t all_transcripts.fasta.clean -T -u all_transcripts.fasta \
+ --ALIGNERS blat --CPU 60
+perl ~/pasa/PASApipeline/misc_utilities/pasa_gff3_validator.pl EVM.out.gff3
+perl ~/pasa/PASApipeline/scripts/Load_Current_Gene_Annotations.dbi \
+ -c alignAssembly.config -g VS1.FINAL.fa \
+ -P EVM.out.gff3
+perl ~/pasa/PASApipeline/Launch_PASA_pipeline.pl \
+-c annotCompare.config -A \
+ -g VS1.FINAL.fa \
+ -t all_transcripts.fasta.clean --CPU 40
+ 
+9.6 Gene filter
+python filter_one_exon_CDS_length.py VS1.sqlite.gene_structures_post_PASA_updates.108840.gff3 VS1.exon_CDS_stat.gene.txt VS1.exon_CDS_filter.gene.txt 300 0 
+python filter_gene_base_repeat.py  VS1.sqlite.gene_structures_post_PASA_updates.108840.single_iso.sorted.1.bed  all_without_trf.sorted.merge.strand.1.bed VS1.repeat_percent.gene.1.txt  VS1.repeat_filter.gene.1.txt 0.5 
+
+10 ncRNA annotation
+10.1 rRNA
+/nfs/nfs1/soft/soft_annotation/blast-2.2.26/bin/formatdb -p F -o T -i ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1; /nfs/nfs1/soft/soft_annotation/blast-2.2.26/bin/blastall -p blastn -e 1e-5 -v 10000 -b 10000 -d ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1 -i /nfs/nfs1/soft/Annotation_pipeline/04.ncRNA-finding/rRNA-tRNA-Rfam/dat/ref-rRNA/plant-rRNA/plant_rRNA.fa -o ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1.rRNA.blast; perl /nfs/nfs1/soft/Annotation_pipeline/common_bin/blast_parser.pl -nohead ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1.rRNA.blast > ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1.rRNA.blast.tab;
+
+10.2 tRNA tRNAscan-SE (version 1.3.1)
+/nfs/nfs1/soft/soft_annotation/tRNAscan-SE-1.3/bin/tRNAscan-SE -o ./VS1.FINAL.fa.60.cut/VS1.FINAL.fa.60.1.tRNA -f ./VS1.FINAL.fa.60.cut/VS1.FINAL.fa.60.1.tRNA.structure  ./VS1.FINAL.fa.60.cut/VS1.FINAL.fa.60.1
+
+10.3 miRNA
+/nfs/nfs1/soft/soft_annotation/blast-2.2.26/bin/blastall -p blastn -W 7 -e 1 -v 10000 -b 10000 -m8 -d ./Rfam.fasta.miRNA -i ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1 -o ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1.miRNA.blast.m8;
+/nfs/nfs1/soft/soft_annotation/infernal-0.81/bin/cmsearch  /nfs/nfs1/soft/Annotation_pipeline/04.ncRNA-finding/rRNA-tRNA-Rfam/dat/Rfam/Rfam/RF01043.cm ./VS1.FINAL.fa.miRNA.cmsearch/1001_2000/10__18670843_18671776.RF01043 > ./VS1.FINAL.fa.miRNA.cmsearch/1001_2000/10__18670843_18671776.RF01043.cmsearch
+
+10.4 snRNA
+/nfs/nfs1/soft/soft_annotation/blast-2.2.26/bin/blastall -p blastn -W 7 -e 1 -v 10000 -b 10000 -m8 -d ./Rfam.fasta.snRNA -i ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1 -o ./VS1.FINAL.fa.cut/VS1.FINAL.fa.1.snRNA.blast.m8;
+/nfs/nfs1/soft/soft_annotation/infernal-0.81/bin/cmsearch  /nfs/nfs1/soft/Annotation_pipeline/04.ncRNA-finding/rRNA-tRNA-Rfam/dat/Rfam/Rfam/RF01217.cm ./VS1.FINAL.fa.snRNA.cmsearch/1001_2000/10__10502775_10503210.RF01217 > ./VS1.FINAL.fa.snRNA.cmsearch/1001_2000/10__10502775_10503210.RF01217.cmsearch
+
+11 function
+#SwissProt, TrEMBL, KEGG
+~/blast-2.2.26/bin/blastall -b 100 -v 100 -p blastp -e 1e-05 -F F -d ${database} -i VS1.pep.fa -o VS1.pep.fa.${database}.blast;
+
+#InterProScan
+interproscan.sh -dp -f tsv -iprlookup -goterms -i VS1.pep.fa -o VS1.pep.fa.iprscan -T ./tmp;
+
+

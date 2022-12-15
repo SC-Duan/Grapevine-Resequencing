@@ -1,0 +1,19 @@
+1. gwas for muscat and non-muscat grapevines
+1.1 filter SNPs
+vcftools --gzvcf grape.all.vcf.gz --keep muscat_nonmuscat.txt --max-missing 0.8 --maf 0.01 --recode --stdout |gzip -c > grape.muscat.vcf.gz
+
+1.2 run gwas
+file=grape.muscat
+plink --vcf ${file}.vcf.gz --set-missing-var-ids @:# --make-bed --out ${file}
+~/gcta_1.93.3beta2/gcta64 --bfile ${file} --make-grm --thread-num 20 --out geno_grm
+~/gcta_1.93.3beta2/gcta64 --grm geno_grm --make-bK-sparse 0.05 --out sp_grm
+~/gcta_1.93.3beta2/gcta64 --bfile ${file} --grm-sparse sp_grm --fastGWA-mlm-binary --pheno phenotype.txt --threads 20 --out geno_assoc
+
+2. gwas for berry skin color
+2.1 filter SNPs
+vcftools --gzvcf grape.all.vcf.gz --keep OIV_225.txt --max-missing 0.7 --maf 0.01 --recode --stdout |gzip -c > grape.OIV_225.vcf.gz
+
+2.2 run gwas
+file=grape.OIV_225
+plink --vcf ${file}.vcf.gz --set-missing-var-ids @:# --make-bed --out ${file}
+~/gcta_1.93.3beta2/gcta64 --mlma-loco --bfile ${file} --pheno phenotype.txt --threads 20 --out OIV_225.geno_assoc

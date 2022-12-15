@@ -1,0 +1,10 @@
+Principal Component Analysis and ADMIXTURE
+     1. PCA
+        ~/bin/plink --allow-extra-chr --recode --chr-set 19 --vcf total.snp.vcf.gz --make-bed --out total.snp
+
+        ~/bin/gcta64 --bfile total.snp  --make-grm --autosome --out total.snp.grim
+
+        ~/bin/gcta64 --grm --pca 3 --out total.snp.pca
+
+     2. ADMIXTURE
+       ~/bin/admixture --cv=10 total.snp.bed 2 |tee log2.out

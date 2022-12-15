@@ -1,0 +1,32 @@
+1. generate input data
+vcftools --gzvcf grape.snp.vcf.gz --keep group.txt --max-missing 1 --mac 1 --recode --stdout | gzip -c > grape.group.vcf.gz
+file=grape.group
+vcftools --gzvcf $file.vcf.gz --plink-tped --out $file
+plink --tfile $file --make-bed --out $file
+plink --bfile $file --indep-pairwise 50 1 0.5 -out $file.pruning
+plink --bfile $file --extract $file.pruning.prune.in --make-bed --out $file.pruned
+plink --bfile $file.pruned --recode tab transpose --out $file.pruned.subset
+mv $file.pruned.subset.tfam $file.pruned.subset.tfam.old
+cat group*.txt >pop.cov
+python change_FID.py pop.cov $file.pruned.subset.tfam.old $file.pruned.subset.tfam
+plink --tfile $file.pruned.subset --freq --noweb --missing --within pop.cov --out $file.pruned.subset
+gzip $file.pruned.subset.frq.strat
+python plink2treemix.py $file.pruned.subset.frq.strat.gz $file.pruned.subset.treemix.gz
+
+# head -1 pop.cov
+#group1	sample1	group1
+
+2.run treemix (m=0 to m=10), 10 iterations per m:
+for ((i=0;i<11;i++));
+	do for j in {1..10};
+		do s=$RANDOM;
+		~/treemix-1.12/bin/treemix -i grape.group.pruned.subset.treemix.gz -o grape.group.pruned.subset.stem.m${i}.${j} -global -m ${i} -k 500 -seed ${s} -bootstrap 1000 -root Syl-E1;
+		done
+	done
+
+3. Estimating the optimal number of migration edges from Treemix
+R:
+library("OptM")
+folder <- "treemix_Syl-E1"
+test.optM = optM(folder)
+plot_optM(test.optM, method = "Evanno",pdf="treemix.OptM.pdf")

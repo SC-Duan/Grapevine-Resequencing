@@ -1,0 +1,9 @@
+1. filter SNPs
+vcftools --gzvcf grape.snp.vcf.gz --keep group.txt --max-missing 1 --mac 1 --bed VS1.SNPable.bed.exclude_cds.bed --recode --stdout | gzip -c > grape.group.vcf.gz
+
+2. construction of the site frequency spectrum
+~/easySFS/easySFS.py -i grape.group.vcf.gz -p pop.group.txt --proj={2*sample size} -a -o output_group --prefix group
+
+3. run stairway_plot
+java -cp stairway_plot_es Stairbuilder group.blueprint
+sh group.blueprint.sh

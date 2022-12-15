@@ -1,0 +1,5 @@
+1. ENMeval test 
+Rscript enmevaluate.R
+
+2. run MaxEnt
+According to the result of ENMeval test,  MaxEnt runs with the suggested parameters.

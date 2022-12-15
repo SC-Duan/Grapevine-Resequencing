@@ -1,0 +1,11 @@
+    1. Linkage disequilibrium
+       ~/bin/PopLDdecay -InVCF total.bi.snp.vcf.gz  -MaxDist 1000 -OutStat total.ld
+
+    2. Nucleotide diversity
+       ~/bin/vcftools --gzvcf Grape.snp.vcf.gz --window-pi 100000 --out Grape.pi
+
+    3. pairwise population fixation index
+	   ~/bin/vcftools --gzvcf Grape.snp.vcf.gz --weir-fst-pop pop1.txt --weir-fst-pop pop2.txt --fst-window-size 100000 --out grape.pop1_po2
+	   
+    4. individual heterozygosity
+	   ~/bin/vcftools --gzvcf Grape.snp.vcf.gz --het --out grape

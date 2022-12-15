@@ -1,0 +1,17 @@
+1. calculated Fst
+vcftools --gzvcf grape.all.vcf.gz --weir-fst-pop Syl-E1.txt --weir-fst-pop CG1.txt --fst-window-size 50000 --fst-window-step 10000 --out grape.Syl-E1.CG1
+vcftools --gzvcf grape.all.vcf.gz --weir-fst-pop Syl-E2.txt --weir-fst-pop CG2.txt --fst-window-size 50000 --fst-window-step 10000 --out grape.Syl-E2.CG2
+
+2. calculated pi
+for i in {Syl-E1,Syl-E2,CG1,CG2};
+	do vcftools --gzvcf grape.${i}.vcf.gz --window-pi 50000 --window-pi-step 10000 --out grape.${i}
+	done
+
+3. get selective regions.
+python extract_signification.py grape.Syl-E1.CG1.fst_pi grape.Syl-E1.CG1.fst_pi.txt grape.Syl-E1.CG1.fst_pi.plot 0.05
+python extract_signification.py grape.Syl-E2.CG2.fst_pi grape.Syl-E2.CG2.fst_pi.txt grape.Syl-E2.CG2.fst_pi.plot 0.05
+
+# head -3 grape.Syl-E1.CG1.fst_pi
+#CHROM	BIN_START	BIN_END	WEIGHTED_FST	Syl-E1	CG1
+#1	1	50000	0.0475312	0.00365458	0.0043379
+#1	10001	60000	0.050045	0.00370561	0.00445387

@@ -1,0 +1,52 @@
+1. prepare input data
+1.1 generate the mask for SNPable Regions
+~/msmc-tools/seqbility-20091110/splitfa VS1.final.chr.fa 35 >VS1.splitfa.35.fa
+bwa aln -t 50 -R 1000000 -O 3 -E 3 VS1.final.chr.fa VS1.splitfa.35.fa >VS1.splitfa.35.sai
+bwa samse -f VS1.splitfa.35.sam VS1.final.chr.fa VS1.splitfa.35.sai VS1.splitfa.35.fa
+perl ~/msmc-tools/seqbility-20091110/gen_raw_mask.pl VS1.splitfa.35.sam >VS1.rawMask_35.fa
+~/msmc-tools/seqbility-20091110/gen_mask -l 35 -r 0.5 VS1.rawMask_35.fa >VS1.mask_35_50.fa
+python makeMappabilityMask.py
+
+1.2 estimate the mean coverage
+for i in `cat sample.txt`;
+	do for ((j=1;j<20;j++));
+		samtools depth -r ${j} ${i}.bam |awk '{sum += $3} END {print sum / NR}' >>${i}.depth.txt;
+		done
+	done
+	
+1.3 calling vcf
+for i in `cat sample.txt`;
+	do for ((j=1;j<20;j++));
+		do ~/samtools-0.1.19/samtools mpileup -q 20 -Q 20 -C 50 -u -r ${j} -f /public/Genome/VS1.final.fa ${i}.bam | ~/samtools-0.1.19/bcftools/bcftools view -cgI - | ~/msmc-tools/bamCaller.py <mean_cov> ${i}.chr${j}.mask.bed.gz |gzip -c > ${i}.chr${j}.vcf.gz
+		done
+	done
+	
+1.4 phase vcf
+for ((i=1;i<20;i++));
+	do java -Xmx100g -jar ~/beagle/beagle_4.1.jar gtgl=/public/grape.chr${i}.vcf.gz out=grape.chr$i.imp gprobs=true nthreads=20;
+	~/shapeit/bin/shapeit -T 10 -V grape.chr$i.imp.vcf.gz --window 0.5 -O grape.chr$i.imp.phased;
+	~/shapeit/bin/shapeit -convert --input-haps grape.chr$i.imp.phased --output-ref grape.chr$i.phased.haplotypes grape.chr$i.phased.legend grape.chr$i.phased.sample --output-vcf grape.chr$i.phased.vcf
+	done
+
+1.5 phase a single-sample vcf file against a reference panel.
+for i in `cat sample.txt`;
+	do for ((j=1;j<20;j++));
+		do ~/msmc-tools/run_shapeit.sh ${i}.chr${j}.vcf.gz tmp ${j}; #need change the location of dir of reference panel in file run_shapeit.sh.
+		done
+	done
+
+1.6 generate input files for msmc for one chromosome.
+for ((i=1;i<20;i++));
+	do ~/msmc-tools/generate_multihetsep.py --mask=sample1.chr${i}.mask.bed.gz --mask=sample2.chr${i}.mask.bed.gz --mask=sample3.chr${i}.mask.bed.gz --mask=sample4.chr${i}.mask.bed.gz --mask=/public/SNPable/VS1.chr${i}.mask.bed sample1.chr${i}.phased.vcf.gz sample2.chr${i}.phased.vcf.gz sample3.chr${i}.phased.vcf.gz sample4.chr${i}.phased.vcf.gz >multihetsep.sample1.sample2.sample3.sample4.chr${i}.txt
+	done
+
+2. population size estimation
+~/msmc2/build/release/msmc2 -t 19 -o sample1.sample2.sample3.sample4.msmc2.out {multihetsep.sample1.sample2.sample3.sample4.chr1.txt to multihetsep.sample1.sample2.sample3.sample4.chr19.txt}
+
+3. cross-population analysis
+~/msmc2/build/release/msmc2 -t 19 -s -I 0,1,2,3 -o sample1.sample2.sample3.sample4.pop1.msmc2.out {multihetsep.sample1.sample2.sample3.sample4.chr1.txt to multihetsep.sample1.sample2.sample3.sample4.chr19.txt}
+~/msmc2/build/release/msmc2 -t 19 -s -I 4,5,6,7 -o sample1.sample2.sample3.sample4.pop2.msmc2.out {multihetsep.sample1.sample2.sample3.sample4.chr1.txt to multihetsep.sample1.sample2.sample3.sample4.chr19.txt}
+~/msmc2/build/release/msmc2 -t 19 -s -I 0-4,0-5,0-6,0-7,1-4,1-5,1-6,1-7,2-4,2-5,2-6,2-7,3-4,3-5,3-6,3-7 -o sample1.sample2.sample3.sample4.across.msmc2.out  {multihetsep.sample1.sample2.sample3.sample4.chr1.txt to multihetsep.sample1.sample2.sample3.sample4.chr19.txt}
+~/msmc-tools/combineCrossCoal.py sample1.sample2.sample3.sample4.across.msmc2.out sample1.sample2.sample3.sample4.pop1.msmc2.out sample1.sample2.sample3.sample4.pop2.msmc2.out >sample1.sample2.sample3.sample4.combined.msmc2.final.txt
+
+

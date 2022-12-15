@@ -1,0 +1,15 @@
+1. generate input data
+for ((i=1;i<20;i++));
+	do vcftools --gzvcf grape.snp.chr${i}.vcf.gz --keep group.txt --max-missing 1 --mac 1 --bed VS1.SNPable.bed.exclude_cds.bed.chr${i} --recode --stdout > grape.group.chr${i}.vcf;
+	bgzip grape.group.chr${i}.vcf;
+	tabix grape.group.chr${i}.vcf.gz;
+	python -m momi.read_vcf grape.group.chr${i}.vcf.gz pop.txt grape.group.chr${i}.snpAlleleCounts.gz --bed VS1.SNPable.bed.exclude_cds.bed.chr${i} --no_aa
+	done
+
+python -m momi.extract_sfs sfs.gz 100 *.snpAlleleCounts.gz
+
+2. run momi2, repeat 20 times.
+python momi2.py
+
+3. run bootstrap, repeat 100 times.
+python momi2.bootstrap.py

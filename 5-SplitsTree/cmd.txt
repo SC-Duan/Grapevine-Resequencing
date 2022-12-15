@@ -1,0 +1,6 @@
+begin SplitsTree;
+LOAD FILE=grape.core.pruned.min4.nex;
+EXECUTE FILE=grape.core.pruned.min4.nex;
+SAVE FILE=grape.core.pruned.min4.splitstree.nex REPLACE=yes;
+QUIT;
+end

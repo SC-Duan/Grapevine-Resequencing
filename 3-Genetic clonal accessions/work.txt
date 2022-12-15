@@ -1,0 +1,7 @@
+
+Genetic clonal accessions
+    1. prepare data
+       ~/bin/plink --allow-extra-chr --recode --chr-set 19 --vcf filter.mindepth7.vcf.gz   --make-bed --out  mindepth7
+
+    2. run snpduo
+      ~/bin/snpduo/snpduo --file mindepth7 --calculated --counts --out  mindepth7
